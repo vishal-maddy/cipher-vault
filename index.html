@@ -1,216 +1,247 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>CIPHER VAULT</title>
   <style>
-    html, body {
+    * {
       margin: 0;
       padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
       height: 100%;
-      font-family: 'Courier New', monospace;
-      background: black;
-      color: #00ccff;
+      font-family: 'Courier New', Courier, monospace;
+      color: #00f7ff;
       overflow: hidden;
+    }
+
+    body {
+      background: linear-gradient(to right, #01010a, #0d0d1a);
+      position: relative;
     }
 
     canvas {
       position: fixed;
       top: 0;
       left: 0;
-      z-index: 0;
+      z-index: -1;
     }
 
     .container {
-      position: relative;
-      z-index: 2;
-      width: 90%;
-      max-width: 500px;
+      padding: 40px;
+      max-width: 700px;
       margin: 80px auto;
-      padding: 30px;
-      background: rgba(0, 0, 0, 0.9);
-      border: 2px solid #00ccff;
-      border-radius: 10px;
-      box-shadow: 0 0 20px #00ccff;
+      background: rgba(0, 0, 0, 0.3);
+      border: 2px solid #00f7ff;
+      border-radius: 15px;
+      box-shadow: 0 0 20px #00f7ff;
     }
 
     h1 {
-      text-align: center;
-      color: #00ccff;
-      font-size: 32px;
+      font-size: 36px;
       margin-bottom: 25px;
+      text-align: center;
+      color: #00f7ff;
+      text-shadow: 0 0 8px #00f7ff;
     }
 
-    input, textarea {
+    textarea, input[type="password"] {
       width: 100%;
       padding: 12px;
-      margin-bottom: 15px;
-      border: 1px solid #00ccff;
-      background: #000;
-      color: #00ccff;
-      border-radius: 5px;
+      margin-bottom: 18px;
       font-size: 16px;
+      border: 2px solid #00f7ff;
+      background: rgba(0, 0, 0, 0.8);
+      color: #00f7ff;
+      border-radius: 8px;
+      outline: none;
+    }
+
+    .buttons {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
     }
 
     button {
-      padding: 12px 16px;
-      margin: 5px;
-      border: none;
-      border-radius: 5px;
-      background-color: #003344;
-      color: #00ccff;
+      flex: 1;
+      padding: 10px 15px;
       font-size: 16px;
+      background-color: transparent;
+      border: 2px solid #00f7ff;
+      color: #00f7ff;
       cursor: pointer;
+      border-radius: 8px;
+      transition: 0.3s;
     }
 
-    #buttons {
-      display: flex;
-      justify-content: space-between;
-      flex-wrap: wrap;
+    button:hover {
+      background-color: #00f7ff;
+      color: #000;
+      box-shadow: 0 0 15px #00f7ff;
     }
 
     #message {
-      font-weight: bold;
-      margin-top: 10px;
-    }
-
-    .error {
+      margin-top: 15px;
       color: red;
+      font-weight: bold;
+      text-align: center;
     }
 
     #timer {
-      color: red;
       text-align: center;
       margin-top: 10px;
+      font-weight: bold;
+      color: red;
     }
   </style>
 </head>
 <body>
 <canvas id="matrix"></canvas>
+
 <div class="container">
   <h1>CIPHER VAULT</h1>
+
   <textarea id="note" placeholder="Enter your note..."></textarea>
-  <input type="password" id="password" placeholder="Enter your password..." />
-  <div id="buttons">
+  <input type="password" id="password" placeholder="Enter password...">
+  
+  <div class="buttons">
     <button onclick="encryptNote()">ENCRYPT</button>
     <button onclick="decryptNote()">DECRYPT</button>
     <button onclick="deleteNote()">DELETE NOTE</button>
   </div>
-  <p id="message"></p>
-  <p id="timer"></p>
+
+  <div id="message"></div>
+  <div id="timer"></div>
 </div>
 
 <script>
-  let encrypted = "";
-  let attempts = 0;
-  let isLocked = false;
-  let countdownInterval;
-  let decryptTimeout;
+  const canvas = document.getElementById("matrix");
+  const ctx = canvas.getContext("2d");
+
+  canvas.height = window.innerHeight;
+  canvas.width = window.innerWidth;
+
+  const letters = "01";
+  const fontSize = 14;
+  const columns = canvas.width / fontSize;
+  const drops = Array.from({ length: columns }, () => 1);
+
+  function drawMatrix() {
+    ctx.fillStyle = "rgba(0, 0, 30, 0.1)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = "#00f7ff";
+    ctx.font = fontSize + "px monospace";
+
+    for (let i = 0; i < drops.length; i++) {
+      const text = letters.charAt(Math.floor(Math.random() * letters.length));
+      ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+
+      if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+        drops[i] = 0;
+      }
+      drops[i]++;
+    }
+  }
+
+  setInterval(drawMatrix, 35);
+
+  let encryptedNote = "";
+  let correctPassword = "";
+  let attemptCount = 0;
+  const maxAttempts = 3;
+  let lockout = false;
+  let lockTimer = 60;
+  let decryptTimer;
+
+  const passwordHistory = [];
 
   function encryptNote() {
-    if (isLocked) return;
-    const note = document.getElementById("note").value;
-    const password = document.getElementById("password").value;
+    const note = document.getElementById("note").value.trim();
+    const password = document.getElementById("password").value.trim();
+
     if (!note || !password) {
-      displayMessage("Please enter both note and password", true);
+      showMessage("Note and password required to encrypt.", "red");
       return;
     }
-    encrypted = btoa(note + "|" + password);
+
+    if (passwordHistory.includes(password)) {
+      showMessage("Password recently used. Use a new one.", "red");
+      return;
+    }
+
+    correctPassword = password;
+    encryptedNote = btoa(note);
+    passwordHistory.push(password);
     document.getElementById("note").value = "";
-    displayMessage("Note encrypted successfully!", false);
+    showMessage("Note encrypted successfully!", "#00f7ff");
   }
 
   function decryptNote() {
-    if (isLocked) return;
+    const password = document.getElementById("password").value.trim();
 
-    const password = document.getElementById("password").value;
-    if (!encrypted) {
-      displayMessage("No encrypted note found!", true);
+    if (lockout) {
+      showMessage("Too many wrong attempts. Wait for timer.", "red");
       return;
     }
 
-    const decrypted = atob(encrypted);
-    const [originalNote, originalPass] = decrypted.split("|");
+    if (!password) {
+      showMessage("Enter password to decrypt.", "red");
+      return;
+    }
 
-    if (password === originalPass) {
-      document.getElementById("note").value = originalNote;
-      displayMessage("Note decrypted!", false);
-      if (decryptTimeout) clearTimeout(decryptTimeout);
-      decryptTimeout = setTimeout(() => {
+    if (password === correctPassword) {
+      document.getElementById("note").value = atob(encryptedNote);
+      showMessage("Note decrypted!", "#00f7ff");
+      attemptCount = 0;
+      clearTimeout(decryptTimer);
+      decryptTimer = setTimeout(() => {
         document.getElementById("note").value = "";
-        displayMessage("Decryption expired! Please enter password again.", true);
+        showMessage("Decrypted note cleared after 30 seconds.", "red");
       }, 30000);
     } else {
-      attempts++;
-      if (attempts >= 3) {
-        lockInputs();
-      } else {
-        displayMessage(`Wrong password. Attempts left: ${3 - attempts}`, true);
+      attemptCount++;
+      showMessage(`Wrong password. Attempt ${attemptCount}/${maxAttempts}`, "red");
+      if (attemptCount >= maxAttempts) {
+        lockout = true;
+        startLockTimer();
       }
     }
   }
 
   function deleteNote() {
-    encrypted = "";
     document.getElementById("note").value = "";
     document.getElementById("password").value = "";
-    displayMessage("Encrypted note deleted!", false);
+    encryptedNote = "";
+    correctPassword = "";
+    showMessage("Note and password cleared.", "#00f7ff");
   }
 
-  function displayMessage(msg, isError) {
-    const message = document.getElementById("message");
-    message.textContent = msg;
-    message.className = isError ? "error" : "";
+  function showMessage(msg, color) {
+    const el = document.getElementById("message");
+    el.textContent = msg;
+    el.style.color = color;
   }
 
-  function lockInputs() {
-    isLocked = true;
-    let timeLeft = 60;
-    displayMessage("Too many wrong attempts! Try again in 60 seconds.", true);
-    updateTimer(timeLeft);
+  function startLockTimer() {
+    let countdown = lockTimer;
+    const timerEl = document.getElementById("timer");
 
-    countdownInterval = setInterval(() => {
-      timeLeft--;
-      updateTimer(timeLeft);
-      if (timeLeft <= 0) {
-        clearInterval(countdownInterval);
-        isLocked = false;
-        attempts = 0;
-        updateTimer("");
-        displayMessage("You can try again now.", false);
+    const interval = setInterval(() => {
+      timerEl.textContent = `Try again in ${countdown} seconds`;
+      countdown--;
+      if (countdown < 0) {
+        clearInterval(interval);
+        lockout = false;
+        attemptCount = 0;
+        timerEl.textContent = "";
+        showMessage("You can try again now.", "#00f7ff");
       }
     }, 1000);
   }
-
-  function updateTimer(value) {
-    document.getElementById("timer").textContent = typeof value === "number" ? `LOCKED: ${value}s` : "";
-  }
-
-  // Matrix Neon Background
-  const canvas = document.getElementById("matrix");
-  const ctx = canvas.getContext("2d");
-  canvas.height = window.innerHeight;
-  canvas.width = window.innerWidth;
-  const letters = "10101010101010";
-  const fontSize = 14;
-  const columns = canvas.width / fontSize;
-  const drops = Array(Math.floor(columns)).fill(1);
-
-  function drawMatrix() {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#00ccff";
-    ctx.font = fontSize + "px monospace";
-
-    for (let i = 0; i < drops.length; i++) {
-      const text = letters[Math.floor(Math.random() * letters.length)];
-      ctx.fillText(text, i * fontSize, drops[i] * fontSize);
-      if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
-      drops[i]++;
-    }
-  }
-
-  setInterval(drawMatrix, 40);
 </script>
 </body>
 </html>
